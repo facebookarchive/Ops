@@ -1,0 +1,191 @@
+#!/usr/bin/ruby
+
+# Author: Ben Hartshorne, Parse Inc. 2013 http://www.parse.com
+# License: Apache v.2.0: http://www.apache.org/licenses/LICENSE-2.0.html
+#
+# this script attempts to grab a 30s lock.
+# If successful, it exits immediately with an exit code of 0
+# If it fails (with a 5s timeout) it exits with code 1
+# this lets you say things on multiple machines in cron like
+#    get_zk_lock foo && do-stuff
+# where do-stuff will only be run on one of the machines
+# it expects to find its zookeeper server in /etc/zookeeper/server_list.yml
+#
+# note that though I'm calling it a lock, it's actually more like leader election.
+#
+# The zookeeper.yml file should look like this:
+# default: &defaults
+#   zookeepers:
+#     - host: localhost
+#       port: 2181
+# production:
+#   zookeepers:
+#     - host: zoo03
+#       port: 2181
+#     - host: zoo01
+#       port: 2181
+# development:
+#   <<: *defaults
+
+
+require 'optparse'
+require 'yaml'
+require 'zookeeper'
+
+## get a zookeeper connection
+def get_zookeeper_conn(config)
+  zk = Zookeeper.new("#{config[:zoo_server]}:#{config[:zoo_port]}")
+  # TODO put in logic here to try the extra_zoos in case the primary zoo server is down
+  return zk
+end
+
+## create the root node if it doesn't already exist
+def create_root(zk, config)
+  # just create it and don't care if it fails.
+  zk.create(:path => config[:root])
+end
+
+## clean up stale lockfiles
+def clean_stale_lockfiles(zk, config)
+  children = zk.get_children(:path => config[:root])
+  children[:children].each do |child|
+    # skip all the children that aren't ours
+    next unless child.start_with?(config[:lockname])
+    cstat = zk.stat(:path => "#{config[:root]}/#{child}")
+    next unless cstat[:stat].exists #someone else may have deleted it already
+    puts "testing child #{child} for deletion; it is #{Time.now() - Time.at(cstat[:stat].ctime / 1000)} seconds old" if config[:verbose]
+    # cstat gives time in ms
+    if Time.at(cstat[:stat].ctime / 1000) < Time.now() - config[:locktime]
+      puts "deleting stale lockfile #{child}" if config[:verbose]
+      zk.delete(:path => "#{config[:root]}/#{child}")
+    end
+  end
+end
+
+## put up my own lockfile
+def create_lock_attempt(zk, config)
+  new_lock = zk.create(:path => "#{config[:root]}/#{config[:lockname]}.", :sequence => true)
+  puts "I created lock attempt #{new_lock}" if config[:verbose]
+  return new_lock
+end
+
+## test to see if I got the lock
+def got_lock?(lock_attempt, zk, config)
+  children = zk.get_children(:path => config[:root])[:children].sort
+  puts "children found are #{children}" if config[:verbose]
+  mylocks = children.select {|child| child.start_with?(config[:lockname]) }
+  puts "Testing my lock (#{lock_attempt[:path]} against the first child (#{config[:root]}/#{mylocks.first})" if config[:verbose]
+  return lock_attempt[:path] == "#{config[:root]}/#{mylocks.first}"
+end
+
+## parse command line options and arguments
+def get_config()
+  config = {}
+  options = {}
+  # defaults
+  options[:config] = '/etc/zookeeper/server_list.yml'
+  options[:env] = 'production'
+  options[:root] = '/get_zk_lock'
+  options[:locktime] = 30
+
+  opts = OptionParser.new
+  opts.banner = <<EOHELP
+Usage: get_zk_lock [OPTIONS] <lockname>
+  get_zk_lock grabs a 30 second zookeeper lock and exits immediately with exit code 0
+  If it fails to get the lock, it times out after 5s and exits with code 1
+  This lets you chain it in cronjobs with && and have your job run only once.
+  One argument is required to identify the lock.  This should be the same for
+  all instances of the same cronjob, and different for different jobs.
+  NOTE: the splay on the clocks running cronjobs controlled by this lock must
+  be less than the frequency - the locktime. 
+  eg. a cronjob running every minute with a locktime of 30s means that your clocks
+  must all be within 30s of each other, or nobody will ever get the lock.
+  Changing the threshold allows you to whether it's more important that the job
+  always runs (and sometimes twice) or if it's better to run only once or not
+  at all. With a locktime of 50, if clocks drift by more than 10s, it will
+  appear as though the lock is always taken and your job will never run.
+  (Conversely, with a locktime of 10 and a drift of >10s, two hosts will both
+  get a lock, running your job twice.)
+
+EOHELP
+
+  opts.on_tail("-h", "--help", "Show this message") do |h|
+    options[:help] = h
+    puts opts
+    exit 1
+  end
+  opts.on("-c", "--config", :REQUIRED, "Specify a config file to use (default /etc/zookeeper/server_list.yml") do |v|
+    options[:config] = v
+  end
+  opts.on("-e", "--env", :REQUIRED, "Specify environment (production / development / test)") do |v|
+    options[:env] = v
+  end
+  opts.on("-l", "--locktime", :REQUIRED, "Specify the duration to keep the lock (default 30 sec)") do |v|
+    options[:locktime] = v.to_i
+  end
+  opts.on("-r", "--root", :REQUIRED, "Specify an alternate root zookeeper node (default /get_zk_lock)") do |v|
+    options[:root] = v
+  end
+  opts.on("-s", "--server", :REQUIRED, "Specify a zookeeper server (overrides config file)") do |v|
+    options[:zoo_server] = v
+  end
+  opts.on("-p", "--port", :REQUIRED, "Specify a zookeeper port (overrides config file)") do |v|
+    options[:zoo_port] = v.to_i
+  end
+  opts.on("-v", "--[no-]verbose", "Run verbosely") do |v|
+    options[:verbose] = v
+  end
+  opts.parse!
+
+  # read config file
+  if File.exists?(options[:config])
+    yml = YAML.load_file(options[:config])
+    config[:zoo_server] = yml[options[:env]]["zookeepers"][0]["host"]
+    config[:zoo_port] = yml[options[:env]]["zookeepers"][0]["port"].to_i
+    # failover servers if they exist
+    if yml[options[:env]]["zookeepers"].length > 1
+      yml[options[:env]]["zookeepers"].shift
+      config[:extra_zoos] = yml[options[:env]]["zookeepers"]
+    end
+  end
+  # overwrite config with command line options
+  %w{env locktime root zoo_server zoo_port verbose}.each do |opt|
+    config[opt.to_sym] = options[opt.to_sym] if options[opt.to_sym]
+  end
+  puts "options are #{config}" if config[:verbose]
+
+  # get lock name
+  config[:lockname] =  ARGV[0]
+  unless config[:lockname]
+    puts "Missing argument <lockname>"
+    puts opts.help
+    exit 1
+  end
+  puts "Lockname = #{config[:lockname]}" if config[:verbose]
+  return config
+end
+
+## main
+
+config = get_config()
+zk = get_zookeeper_conn(config)
+unless zk
+  puts "Failed to get zookeeper connection.  Bailing out" if config[:verbose]
+  exit 1
+end
+
+unless create_root(zk, config)
+  puts "Failed to create root node.  Bailing out" if config[:verbose]
+  exit 1
+end
+
+clean_stale_lockfiles(zk, config)
+mylock = create_lock_attempt(zk, config)
+if got_lock?(mylock, zk, config)
+  puts "I got the lock with #{mylock}" if config[:verbose]
+  exit 0
+else
+  puts "I failed to get the lock with #{mylock}" if config[:verbose]
+  exit 1
+end
+
