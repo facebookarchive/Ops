@@ -11,8 +11,6 @@ import yaml
 import json
 import argparse
 
-AWS_CONF='/etc/nagios3/conf.d/aws.yml'
-
 def get_ec2_rules(security_groups):
     groupset = {}
     for secgroup in security_groups:
@@ -35,8 +33,8 @@ def get_ec2_rules(security_groups):
             groupset[secgroup.name][rule_id] = ruleset
     return groupset
 
-def get_local_rules():
-    fh = open('/var/lib/git_checkout/chef-repo/ec2_security_groups/serialized_rules.json')
+def get_local_rules(git_rules_file):
+    fh = open(git_rules_file)
     comments_removed = ""
     for line in fh:
         if line.strip().startswith("#"):
@@ -164,10 +162,16 @@ def main():
     parser.add_argument('--dump-ec2', dest='dump_ec2', action="store_true", default=False, help="Rather than performing the check, dump the JSON representation of our security groups")
     parser.add_argument('--dump-local', dest='dump_local', action="store_true", default=False, help="Rather than performing the check, dump the JSON representation of what's in git")
     parser.add_argument('--json-diff', dest='json_diff', action="store_true", default=False, help="Print the changed rules as JSON instead of English")
+    parser.add_argument('-g', '--git-checkout-path', dest='git_checkout_path', action="store", default='/var/lib/git_checkout', help="Path to the git checkout")
+    parser.add_argument('-r', '--repo-name', dest='repo_name', action="store", default='chef-repo', help="Set the name of the git repo to use")
+    parser.add_argument('-f', '--git-file', dest='git_file', action="store", default='ec2_security_groups/serialized_rules.json', help="Path and filename to store rules within the git repo")
+    parser.add_argument('-a', '--aws-conf', dest='aws_conf', action="store", default='/etc/nagios3/conf.d/aws.yml', help="Path to the AWS config file")
     args = parser.parse_args()
 
+    git_rules_file = "%s/%s/%s" % (args.git_checkout_path, args.repo_name, args.git_file)
+
     try:
-        conf = yaml.load(open(AWS_CONF))
+        conf = yaml.load(open(args.aws_conf))
     except IOError, e:
         print "CRITICAL: %s" % e
         exit(2)
@@ -187,7 +191,7 @@ def main():
         print "CRITICAL: %s" % e
         exit(2)
     try:
-        localset = get_local_rules()
+        localset = get_local_rules(git_rules_file)
         if(args.dump_local):
             local_dump = json.dumps(localset, sort_keys=True, indent=4, separators=(',', ': '))
             print local_dump
