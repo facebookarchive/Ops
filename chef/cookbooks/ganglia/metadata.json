@@ -1,0 +1,36 @@
+{
+  "name": "ganglia",
+  "description": "Installs/Configures ganglia",
+  "long_description": "= DESCRIPTION:\n\nInstalls and configures Ganglia.\n\nhttp://ganglia.sourceforge.net/\n\n= REQUIREMENTS:\n\n* SELinux must be disabled on CentOS\n* iptables must allow access to port 80\n\n= ATTRIBUTES:\n\n= USAGE:\n\nA run list with \"recipe[ganglia]\" enables monitoring.  \n\nA run list with \"recipe[ganglia::web]\" enables the web interface.  \n\nA run list with \"recipe[ganglia::graphite]\" enables graphite graphs.\n\n= LWRP:\n\n== gmetric\n\nInstalls a gmetric plugin.\n\nThe plugin is composed of two templates:\n* One for the script\n* One for the cron job that will call the script\n\nThe templates must be in the caller cookbook.\n\nExample:\n\n    ganglia_gmetric 'memcache' do\n        options :port => 11211\n    end\n\n    templates:\n    cookbooks/memcache/templates/default/memcache.gmetric.erb\n    cookbooks/memcache/templates/default/memcache.cron.erb\n\nThe content of 'options' will be passed to the templates\n\n== python\n\nInstalls a python plugin.\n\nThe plugin is composed of two templates:\n* One for the python module\n* One for the configuration of the module\n\nThe templates must be in the caller cookbook.\n\nExample:\n\n    ganglia_python 'memcache' do\n        options :port => 11211\n    end\n\n    templates:\n    cookbooks/memcache/templates/default/memcache.py.erb\n    cookbooks/memcache/templates/default/memcache.pyconf.erb\n\nThe content of 'options' will be passed to the templates\n\n= CAVEATS: \n\nThis cookbook has been tested on Ubuntu 10.04 and Centos 5.5.\n\nSearch seems to takes a moment or two to index.\nYou may need to converge again to see recently added nodes.\n",
+  "maintainer": "Heavy Water Software Inc.",
+  "maintainer_email": "darrin@heavywater.ca",
+  "license": "Apache 2.0",
+  "platforms": {
+    "debian": ">= 0.0.0",
+    "ubuntu": ">= 0.0.0",
+    "redhat": ">= 0.0.0",
+    "centos": ">= 0.0.0",
+    "fedora": ">= 0.0.0"
+  },
+  "dependencies": {
+  },
+  "recommendations": {
+    "graphite": ">= 0.0.0"
+  },
+  "suggestions": {
+    "iptables": ">= 0.0.0"
+  },
+  "conflicting": {
+  },
+  "providing": {
+  },
+  "replacing": {
+  },
+  "attributes": {
+  },
+  "groupings": {
+  },
+  "recipes": {
+  },
+  "version": "0.1.1"
+}
