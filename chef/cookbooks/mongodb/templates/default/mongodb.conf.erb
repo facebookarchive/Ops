@@ -1,5 +1,7 @@
 # mongodb.conf
+<% if ! @arbiter_replset -%>
 <%= @replicaset_name ? "replSet=#{@replicaset_name}" : "" %>
+<% end -%>
 
 # should we use rest
 rest=<%= @enable_rest %>
