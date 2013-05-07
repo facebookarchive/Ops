@@ -8,8 +8,10 @@ pre-start script
   mkdir -p <%= node['mongodb']['dbpath'] %>
   mkdir -p <%= node['mongodb']['logpath'] %>
 
-  vol=$(grep <%= node['mongodb']['dbpath'] %> /proc/mounts |awk '{print $1}')
-  disks=$(mdadm --detail $vol |grep active |awk '{print $7}')
+  if $(which mdadm) ; then
+    vol=$(grep <%= node['mongodb']['dbpath'] %> /proc/mounts |awk '{print $1}')
+    disks=$(mdadm --detail $vol |grep active |awk '{print $7}')
+  fi
 
   for n in $vol $disks ; do
     blockdev --setra <%= node['mongodb']['setra'] %> $n
@@ -22,7 +24,13 @@ stop on runlevel [06]
 
 script
   ENABLE_MONGODB="yes"
-  if [ -f <%= node['mongodb']['defaults_dir'] %>/mongodb ]; then . <%= node['mongodb']['defaults_dir'] %>/mongodb; fi
-  if [ "x$ENABLE_MONGODB" = "xyes" ]; then exec start-stop-daemon --start --quiet --chuid mongodb --exec  /usr/bin/mongod -- --config /etc/mongodb.conf; fi
+  <% if @arbiter_replset -%>
+  if [ -f <%= node['mongodb']['defaults_dir'] %>/arbiter-<%= @arbiter_replset %> ]; then . <%= node['mongodb']['defaults_dir'] %>/arbiter-<%= @arbiter_replset %> ; fi
+  if [ "x$ENABLE_MONGODB" = "xyes" ]; then exec start-stop-daemon --start --quiet --chuid mongodb --exec  /usr/bin/mongod --name <%= @arbiter_replset %> -- --config /etc/arbiter-<%= @arbiter_replset %>.conf ; fi
+  <% else %>
+  if [ -f <%= node['mongodb']['defaults_dir'] %>/mongodb ]; then . <%= node['mongodb']['defaults_dir'] %>/mongodb ; fi
+  if [ "x$ENABLE_MONGODB" = "xyes" ]; then exec start-stop-daemon --start --quiet --chuid mongodb --exec  /usr/bin/mongod -- --config /etc/mongodb.conf ; fi
+  <% end -%>
+
 end script
 

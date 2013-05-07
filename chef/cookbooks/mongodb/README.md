@@ -7,6 +7,7 @@ Installs and configures MongoDB, supporting:
 * Replication
 * Sharding
 * Replication and Sharding
+* Arbiters
 * 10gen repository package installation
 * Backups via EC2 snapshot
 
@@ -168,10 +169,24 @@ nodes which should be in the same replicaset have the same shard name.
 
 For more details, you can find a [tutorial for Sharding + Replication](https://github.com/edelight/chef-cookbooks/wiki/MongoDB%3A-Replication%2BSharding) in the wiki.
 
-## Backups
+## Arbiters
 
-To enable backups for a replica set, select one node to be your snapshot host.  Add the 
-`mongodb::backups` recipe to the node so the CPAN modules get installed.  Set
+Use the LWRP `mongodb_arbiter`.  Set the following resources:
+
+```ruby
+mongodb_arbiter "arb1" do
+  dbpath "/mnt/arbiters/arb1"
+  logpath "/var/log/mongodb-arb1/mongodb.log"
+  port    30305
+  replset "repl1"
+  action :create
+end
+```
+
+## Backups on EC2
+
+To enable EBS snapshot backups for a replica set, select one node to be your snapshot host.  Add the 
+`mongodb::backups` recipe to the node so the pymongo and boto libraries get installed.  Set
 that host as the mongodb[:backup_host] in your role attributes.  Set the backup[:mongo_volumes]
 attribute to whichever volume(s) are mounted as /var/lib/mongodb.  For example,
 
