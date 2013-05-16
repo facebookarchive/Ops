@@ -1,0 +1,83 @@
+#!/usr/bin/env ruby
+# sinatra app to export an ical feed of all deploys
+
+require 'sinatra'
+require 'ri_cal'
+
+localGitRepo = "/var/lib/git_checkout"
+repoName = "myrepo"
+pathToGitfile = "#{localGitRepo}/#{repoName}/.git"
+
+# replace the URL with a generated UUID or equally obscure string
+get '/abcdef0123456789abcdef0123456789abcdef0123456789.ics' do
+
+  tags=%x{git --git-dir #{pathToGitfile} tag -l deploy*}
+
+  # format of a git tag: deployed-<target>-YYYY.MM.DD-HHMMSS
+  # turn the string of newline separated tags into an bunch of ["deployed", "website", "2012.10.29", "194935"]
+  splittags = tags.split.map { |tag| tag.split('-')}
+
+  mycal = RiCal.Calendar do |cal|
+    splittags.each do |splittag|
+      #skip staging deploys
+      next if splittag[1] =~ /^staging.*/
+      begin
+        cal.event do |event|
+          event.summary = "#{splittag[1]}"
+          shortdate = splittag[2].delete(".")
+          time = "#{shortdate}T#{splittag[3]}Z"
+          event.dtstart = "#{time}"
+          event.dtend = "#{time}"
+          event.uid = splittag.join('-')
+          event.description = "deployed from tag " + splittag.join('-')
+        end
+      rescue
+        # noop
+      end
+    end
+  end
+
+  headers "Content-Type" => "text/calendar"
+
+  return mycal.to_s
+
+end
+# get staging calendar
+get '/0123456789abcdefghijklmnopqrstuvwxyz.ics' do
+
+  tags=%x{git --git-dir #{pathToGitfile} tag -l deploy*}
+
+  # turn the string of newline separated tags into an bunch of ["deployed", "website", "2012.10.29", "194935"]
+  splittags = tags.split.map { |tag| tag.split('-')}
+
+  mycal = RiCal.Calendar do |cal|
+    splittags.each do |splittag|
+      next unless splittag[1] =~ /^staging.*/
+      begin
+        cal.event do |event|
+          event.summary = "#{splittag[1]}"
+          shortdate = splittag[2].delete(".")
+          time = "#{shortdate}T#{splittag[3]}Z"
+          event.dtstart = "#{time}"
+          event.dtend = "#{time}"
+          event.uid = splittag.join('-')
+          event.description = "deployed from tag " + splittag.join('-')
+        end
+      rescue
+        # noop
+      end
+    end
+  end
+
+  headers "Content-Type" => "text/calendar"
+
+  return mycal.to_s
+
+end
+
+# return 401 for any other URL
+not_found do
+  status 401
+  "Content Unauthorized"
+end
+
