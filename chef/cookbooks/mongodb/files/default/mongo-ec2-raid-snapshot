@@ -1,0 +1,113 @@
+#!/usr/bin/python
+
+# Copyright Parse, Inc. 2013
+# This code is made available under the Apache License
+# For more info, please see http://www.apache.org/licenses/LICENSE-2.0.html
+
+try:
+    from pymongo import MongoClient
+except ImportError:
+    #old versions of pymongo use Connection
+    from pymongo import Connection as MongoClient
+from boto.ec2 import *
+from boto.exception import EC2ResponseError
+from pymongo.errors import ConnectionFailure
+from subprocess import CalledProcessError
+import argparse
+import logging
+import subprocess
+import sys
+import yaml
+
+
+def ebs_snapshot(ec2_conn, description, volume_ids):
+    logging.info('Syncing Filesystem')
+    subprocess.check_call('sync')
+    volumes=ec2_conn.get_all_volumes(volume_ids)
+    for volume in volumes:
+        snapshot=volume.create_snapshot('%s %s' % (description, volumes.index(volume)))
+        logging.info('Creating snapshot of %s: %s' % (volume.id, snapshot.id))
+
+
+def lock_mongo(mongo_conn):
+    if not mongo_conn.is_locked:
+        logging.info('Locking Mongo')
+        mongo_conn.fsync(lock=True)
+    else:
+        logging.warning('Mongo is already locked')
+    
+
+def unlock_mongo(mongo_conn):
+    if mongo_conn.is_locked:
+        logging.info('Unlocking Mongo')
+        mongo_conn.unlock()
+    else:
+        logging.warning('Mongo is already unlocked')
+
+
+def log_and_die(log):
+    logging.critical(log)
+    sys.exit(1)
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Take a consistent snapshot of RAID EBS volumes used for MongoDB on EC2.')
+    parser.add_argument('-a', '--aws-conf', dest='aws_conf', action='store', help='Path to the YAML formatted AWS config file. Defaults to using environment variables or IAM roles if no config file is added')
+    parser.add_argument('-r', '--region', dest='region', action='store', default='us-east-1', help='EC2 region like "us-west-2". Default is "us-east-1"')
+    parser.add_argument('-d', '--description', dest='description', action='store', default='Mongo RAID Snapshot', help='Description for the EBS snapshot. Defaults is "Mongo RAID Snapshot" ')
+    parser.add_argument('-H', '--host', dest='mongo_host', action='store', default='localhost', help='Mongo hostname to connect too')
+    parser.add_argument('-p', '--port', dest='mongo_port', action='store', default=27017, type=int, help='Mongo port to connect too')
+    parser.add_argument('volume_ids', action='store', metavar='VOLUME IDS', nargs='+', help='EBS volume id(s) used for snapshotting')
+    log = parser.add_mutually_exclusive_group()
+    log.add_argument('-v', '--verbose', dest='verbose', action='store_true', default=False, help='Add more verbosity')
+    log.add_argument('-q', '--quiet', dest='quiet', action='store_true', default=False, help='Quiet mode')
+    args = parser.parse_args()
+
+    if args.verbose:
+        log_level = logging.DEBUG
+    elif args.quiet:
+        log_level = logging.ERROR
+    else:
+        log_level = logging.INFO
+    logging.basicConfig(format='%(levelname)s:%(message)s', level=log_level)
+
+    try:
+        if args.aws_conf:
+            # YAML file should be formatted as
+            # :access_key_id: <AWS_KEY_ID>
+            # :secret_access_key: <AWS_SECRET_ACCESS_KEY>
+            conf = yaml.load(open(args.aws_conf))
+            region = get_region(region_name=args.region, aws_access_key_id=conf[':access_key_id'], aws_secret_access_key=conf[':secret_access_key'])
+            ec2_conn = EC2Connection(aws_access_key_id=conf[':access_key_id'], aws_secret_access_key=conf[':secret_access_key'], region=region)
+        else:
+            # use environment variables or IAM roles instead
+            # boto takes care of this for us
+            # export AWS_ACCESS_KEY_ID="AWS_KEY_ID"
+            # export AWS_SECRET_ACCESS_KEY="AWS_SECRET_ACCESS_KEY"
+            region = get_region(region_name=args.region)
+            ec2_conn = EC2Connection(region=region)
+    except IOError, e:
+        log_and_die('Unable to read AWS config file %s: %s' % (args.aws_conf,e))
+    except KeyError:
+        log_and_die('AWS config file %s is not formatted correctly' % args.aws_conf)
+                
+    try:
+        mongo_conn = MongoClient(host=args.mongo_host, port=args.mongo_port)
+    except ConnectionFailure:
+        log_and_die('Unable to connect to Mongo %s:%s' % (mongo_host, mongo_port))
+
+    lock_mongo(mongo_conn)
+    try:
+        ebs_snapshot(ec2_conn, args.description, args.volume_ids)
+    except CalledProcessError, e:
+        log_and_die('Unable to sync file system: %s' % e)
+    except EC2ResponseError, e:
+        log_and_die('EC2 Response Error: %s' % e.error_message)
+    finally:
+        #be sure to unlock mongo before exiting
+        unlock_mongo(mongo_conn)
+        mongo_conn.disconnect()
+
+    sys.exit(0)
+
+main()
