@@ -21,5 +21,5 @@ else
   string="Mongo RAID Snapshot $(date +%F:%T)"
 fi
 
-/usr/local/bin/ec2-consistent-snapshot --quiet --mongo --region us-east-1 --description "$string" <%= node['backups']['mongo_volumes'].join(" ") %>
+/usr/local/bin/mongo-ec2-raid-snapshot --quiet --region us-east-1 --description "$string" <%= node['backups']['mongo_volumes'].join(" ") %>
 
