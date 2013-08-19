@@ -24,16 +24,18 @@ package node[:mongodb][:package_name] do
   version "#{node[:mongodb][:mongodb_version]}"
 end
 
-needs_mongo_gem = (node.recipe?("mongodb::replicaset") or node.recipe?("mongodb::mongos"))
+needs_mongo_gem = (run_context.loaded_recipe?("mongodb::replicaset") or run_context.loaded_recipe?("mongodb::mongos"))
 
 if needs_mongo_gem
-  chef_gem 'mongo' do
-    action :install
-  end
-  # install the mongo ruby gem at compile time to make it globally available
-  gem_package 'mongo' do
-    action :nothing
-  end.run_action(:install)
+	['mongo', 'bson_ext'].each do |pkg|
+		chef_gem pkg do
+			action :install
+		end
+		# install the mongo ruby gem at compile time to make it globally available
+		gem_package pkg do
+			action :nothing
+		end.run_action(:install)
+	end
   Gem.clear_paths
 end
 

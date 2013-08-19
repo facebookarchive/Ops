@@ -155,7 +155,7 @@ define :mongodb_instance, :mongodb_type => "mongod" , :action => [:enable, :star
   end
 
   # init script
-  template "#{node['mongodb']['init_dir']}/#{name}" do
+  template "#{node['mongodb']['init_dir']}/#{name}#{node['mongodb']['init_extension']}" do
     action :create
     source node[:mongodb][:init_script_template]
     group node['mongodb']['root_group']
@@ -169,6 +169,7 @@ define :mongodb_instance, :mongodb_type => "mongod" , :action => [:enable, :star
 
   # service
   service name do
+		provider Chef::Provider::Service::Upstart
     supports :status => true, :restart => true
     action service_action
     unless service_notifies.empty?
