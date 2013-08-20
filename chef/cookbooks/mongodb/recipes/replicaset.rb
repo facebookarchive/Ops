@@ -20,7 +20,7 @@
 include_recipe "mongodb"
 
 # if we are configuring a shard as a replicaset we do nothing in this recipe
-if !node.recipe?("mongodb::shard")
+if !run_context.loaded_recipe?("mongodb::shard")
   # these are used in the library for searches
   node.set["mongodb_cluster_name"] = node['mongodb']['cluster_name']
   node.set["mongodb_shard_name"] = node['mongodb']['shard_name']

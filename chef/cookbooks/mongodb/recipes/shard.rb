@@ -27,7 +27,7 @@ service "mongodb" do
   action [:disable, :stop]
 end
 
-is_replicated = node.recipe?("mongodb::replicaset")
+is_replicated = run_context.loaded_recipe?("mongodb::replicaset")
 
 
 # we are not starting the shard service with the --shardsvr
