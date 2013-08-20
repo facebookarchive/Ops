@@ -8,7 +8,7 @@ pre-start script
   mkdir -p <%= node['mongodb']['dbpath'] %>
   mkdir -p <%= node['mongodb']['logpath'] %>
 
-  if $(which mdadm) ; then
+  if which mdadm; then
     vol=$(grep <%= node['mongodb']['dbpath'] %> /proc/mounts |awk '{print $1}')
     disks=$(mdadm --detail $vol |grep active |awk '{print $7}')
   fi
