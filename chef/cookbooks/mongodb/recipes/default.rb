@@ -39,7 +39,7 @@ if needs_mongo_gem
   Gem.clear_paths
 end
 
-if node.recipe?("mongodb::default") or node.recipe?("mongodb")
+if run_context.loaded_recipe?("mongodb::default") or run_context.loaded_recipe?("mongodb")
   # configure default instance
   mongodb_instance "mongodb" do
     mongodb_type "mongod"
