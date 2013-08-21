@@ -25,7 +25,7 @@ action :create do
     owner "root"
     group "root"
     mode "0644"
-    variables("dbpath" => new_resource.dbpath, "replicaset_name" => new_resource.replset, "port" => new_resource.port, "logpath" => new_resource.logpath)
+    variables("dbpath" => new_resource.dbpath, "replicaset_name" => new_resource.replset, "port" => new_resource.port, "logpath" => new_resource.logpath, "nojournal" => true)
   end
 
   # create the upstart script, populate it with the correct config file

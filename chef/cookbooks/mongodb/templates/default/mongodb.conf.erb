@@ -4,7 +4,7 @@
 <% end -%>
 
 # should we use rest
-rest=<%= @enable_rest %>
+rest=<%= @enable_rest == true %>
 
 # Where to store the data.
 
@@ -21,7 +21,7 @@ logappend=true
 port = <%= @port %>
 
 # Disables write-ahead journaling
-# nojournal = true
+nojournal = <%= @nojournal == true %>
 
 # Enables periodic logging of CPU utilization and I/O wait
 cpu = true
