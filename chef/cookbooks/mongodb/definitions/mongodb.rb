@@ -250,6 +250,7 @@ define :create_raided_drives_from_snapshot, :disk_counts => 4,
         action     [:auto_attach]
         snapshots  MongoDB.find_snapshots(aws["aws_access_key_id"],
                                           aws["aws_secret_access_key"],
+                                          node[:backups][:region],
                                           node[:backups][:mongo_volumes],
                                           node[:mongodb][:cluster_name])
   end
