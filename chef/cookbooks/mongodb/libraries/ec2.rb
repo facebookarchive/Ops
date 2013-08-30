@@ -7,7 +7,7 @@ class Chef::ResourceDefinitionList::MongoDB
   # nil.  The returned snapshots array will be parallel to the volumes array,
   # i.e the latest snapshot for the Nth volume in the array will be the Nth
   # snapshot in the result.
-  def self.find_snapshots(key, secret_key, volumes, clustername)
+  def self.find_snapshots(key, secret_key, region, volumes, clustername)
     require 'aws-sdk'
 
     if volumes.size == 0
@@ -18,7 +18,7 @@ class Chef::ResourceDefinitionList::MongoDB
     # Compute the latest snapshots.
     ec2 = AWS::EC2.new(
           :access_key_id => key,
-          :secret_access_key => secret_key)
+          :secret_access_key => secret_key).regions[region]
 
     # This is an array of arrays.  snapshots[i] will have the sorted list of
     # snapshots for volumes[i].  The snapshots are sorted by description which
