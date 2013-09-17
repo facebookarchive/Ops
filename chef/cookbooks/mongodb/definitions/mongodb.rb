@@ -172,6 +172,7 @@ define :mongodb_instance, :mongodb_type => "mongod" , :action => [:enable, :star
 		provider Chef::Provider::Service::Upstart
     supports :status => true, :restart => true
     action service_action
+    service_name "mongodb"
     unless service_notifies.empty?
       notifies service_notifies
     end
