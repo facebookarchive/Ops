@@ -4,6 +4,8 @@
 # This code is made available under the Apache License
 # For more info, please see http://www.apache.org/licenses/LICENSE-2.0.html
 
+
+from boto.ec2 import get_region
 from boto.ec2.connection import EC2Connection
 from boto.exception import BotoServerError
 from sys import exit
@@ -19,7 +21,8 @@ def get_ec2_rules(security_groups):
             ruleset = {}
             #groupset[secgroup.name].append(ruleset)
             for key in ["from_port", "ip_protocol", "to_port"]:
-                ruleset[key] = rule.__dict__[key]
+                val = rule.__dict__[key]
+                ruleset[key] = val if (val is not None) else "_None"
             rule_id = "-".join(sorted(ruleset.values()))
             #print "generated rule id %s" % rule_id
             ruleset["grants"] = []
@@ -166,6 +169,8 @@ def main():
     parser.add_argument('-r', '--repo-name', dest='repo_name', action="store", default='chef-repo', help="Set the name of the git repo to use")
     parser.add_argument('-f', '--git-file', dest='git_file', action="store", default='ec2_security_groups/serialized_rules.json', help="Path and filename to store rules within the git repo")
     parser.add_argument('-a', '--aws-conf', dest='aws_conf', action="store", default='/etc/nagios3/conf.d/aws.yml', help="Path to the AWS config file")
+    parser.add_argument('--region', dest='region', action="store", default='us-east-1', help="AWS region to query")
+
     args = parser.parse_args()
 
     git_rules_file = "%s/%s/%s" % (args.git_checkout_path, args.repo_name, args.git_file)
@@ -175,8 +180,10 @@ def main():
     except IOError, e:
         print "CRITICAL: %s" % e
         exit(2)
+
     try:
-        conn = EC2Connection(conf[':access_key_id'], conf[':secret_access_key'])
+        selected_region = get_region(args.region)
+        conn = EC2Connection(conf[':access_key_id'], conf[':secret_access_key'], region=selected_region)
         security_groups = conn.get_all_security_groups()
     except BotoServerError, e:
         print "CRITICAL: %s" % e
