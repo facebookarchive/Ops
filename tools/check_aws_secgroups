@@ -4,7 +4,6 @@
 # This code is made available under the Apache License
 # For more info, please see http://www.apache.org/licenses/LICENSE-2.0.html
 
-
 from boto.ec2 import get_region
 from boto.ec2.connection import EC2Connection
 from boto.exception import BotoServerError
@@ -16,24 +15,25 @@ import argparse
 def get_ec2_rules(security_groups):
     groupset = {}
     for secgroup in security_groups:
-        groupset[secgroup.name] = {}
-        for rule in secgroup.rules:
-            ruleset = {}
-            #groupset[secgroup.name].append(ruleset)
-            for key in ["from_port", "ip_protocol", "to_port"]:
-                val = rule.__dict__[key]
-                ruleset[key] = val if (val is not None) else "_None"
-            rule_id = "-".join(sorted(ruleset.values()))
-            #print "generated rule id %s" % rule_id
-            ruleset["grants"] = []
-            for grant in rule.grants:
-                # cidr_ip will exist (ip rule) or be None (group rule)
-                if grant.cidr_ip:
-                    ruleset["grants"].append(grant.cidr_ip)
-                else:
-                    #it's a security group instead of a cidr; store a string of name:id (names for readability, ids for uniqueness)
-                    ruleset["grants"].append("%s:%s" % (grant.name, grant.groupId))
-            groupset[secgroup.name][rule_id] = ruleset
+        # create a unique identifier of the name, id, and vpc_id
+        secgroup_id = "%s:%s:%s" % (secgroup.name, secgroup.id, secgroup.vpc_id)
+        groupset[secgroup_id] = {}
+        for rulesetname in ["rules", "rules_egress"]:
+            for rule in secgroup.__dict__[rulesetname]:
+                ruleset = {}
+                for key in ["from_port", "ip_protocol", "to_port"]:
+                    ruleset[key] = rule.__dict__[key] if rule.__dict__[key] else "_None"
+                rule_id = rulesetname + ":" + "-".join(sorted(ruleset.values()))
+                #print "generated rule id %s" % rule_id
+                ruleset["grants"] = []
+                for grant in rule.grants:
+                    # cidr_ip will exist (ip rule) or be None (group rule)
+                    if grant.cidr_ip:
+                        ruleset["grants"].append(grant.cidr_ip)
+                    else:
+                        #it's a security group instead of a cidr; store a string of name:id (names for readability, ids for uniqueness)
+                        ruleset["grants"].append("%s:%s" % (grant.name, grant.groupId))
+                groupset[secgroup_id][rule_id] = ruleset
     return groupset
 
 def get_local_rules(git_rules_file):
@@ -94,6 +94,9 @@ def compare_rulesets(ec2_security_groups, local_security_groups):
                 ec2grants = set(ec2rule['grants'])
                 localgrants = set(localrule['grants'])
                 grantdiff = ec2grants.symmetric_difference(localgrants)
+                if not grantdiff:
+                    diffdetails += "The order of grants for the %s security group, %s/%s-%s rule are different." % (
+                            group, localrule['ip_protocol'], localrule['from_port'], localrule['to_port'])
                 for eachgrant in grantdiff:
                     if eachgrant not in ec2grants:
                         diffdetails += "git has a rule that for the %s security group, %s can reach %s/%s-%s.  This is missing from ec2.\n" % (
@@ -170,7 +173,6 @@ def main():
     parser.add_argument('-f', '--git-file', dest='git_file', action="store", default='ec2_security_groups/serialized_rules.json', help="Path and filename to store rules within the git repo")
     parser.add_argument('-a', '--aws-conf', dest='aws_conf', action="store", default='/etc/nagios3/conf.d/aws.yml', help="Path to the AWS config file")
     parser.add_argument('--region', dest='region', action="store", default='us-east-1', help="AWS region to query")
-
     args = parser.parse_args()
 
     git_rules_file = "%s/%s/%s" % (args.git_checkout_path, args.repo_name, args.git_file)
@@ -180,10 +182,9 @@ def main():
     except IOError, e:
         print "CRITICAL: %s" % e
         exit(2)
-
     try:
-        selected_region = get_region(args.region)
-        conn = EC2Connection(conf[':access_key_id'], conf[':secret_access_key'], region=selected_region)
+        selected_region = get_region(args.region, aws_access_key_id=conf[':access_key_id'], aws_secret_access_key=conf[':secret_access_key'])
+        conn = EC2Connection(aws_access_key_id=conf[':access_key_id'], aws_secret_access_key=conf[':secret_access_key'], region=selected_region)
         security_groups = conn.get_all_security_groups()
     except BotoServerError, e:
         print "CRITICAL: %s" % e
@@ -208,7 +209,7 @@ def main():
         exit(2)
     except ValueError, e:
         print "CRITICAL: %s" % e
-        print "Check your JSON for wayward commas and things."
+        print "Check your JSON for wayward commas and things. The line number printed ignores comments (so is too low)."
         exit(2)
 
     if (ec2set != localset):
