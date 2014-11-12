@@ -33,7 +33,12 @@ def get_ec2_rules(security_groups):
                     else:
                         #it's a security group instead of a cidr; store a string of name:id (names for readability, ids for uniqueness)
                         ruleset["grants"].append("%s:%s" % (grant.name, grant.groupId))
-                groupset[secgroup_id][rule_id] = ruleset
+                # if we're appending to an existing rule_id (it's not an empty hash), do so here.
+                try:
+                    groupset[secgroup_id][rule_id]["grants"] += ruleset["grants"]
+                except KeyError:
+                    groupset[secgroup_id][rule_id] = ruleset
+                groupset[secgroup_id][rule_id]["grants"].sort()  # list comes back unruly
     return groupset
 
 def get_local_rules(git_rules_file):
@@ -49,6 +54,7 @@ def get_local_rules(git_rules_file):
     for secgroup in groupset:
         for (rule_id, rule) in groupset[secgroup].iteritems():
             rule.pop('comment', None)
+            rule["grants"].sort()  # list is unordered
     return groupset
 
 # give detail about where the rulesets differ
@@ -160,7 +166,57 @@ def compare_rulesets(ec2_security_groups, local_security_groups):
             #diffdetails += "rule exists in git but not in ec2:"
     return (diffdetails, diffhash)
 
+def print_ruleset(rules_hash):
+    '''
+    Prints out the ruleset in a friendly way.
+    This replaces json.dumps() so as to enforce printing according to the style guide
+    '''
+    spaces=4
+    indent=0
+    print "{\n"
+    secgroups = []
+    for secgroup in sorted(rules_hash.keys()):
+        secgroups.append(generate_secgroup_string(secgroup, rules_hash[secgroup]))
+    print ",\n".join(secgroups)
+    print "}\n"
 
+
+def generate_secgroup_string(secgroup, secgroup_hash):
+    indent=1
+    spaces=4
+    secgroup_str = ""
+    secgroup_str += '%s"%s": {\n' % ((" "*indent*spaces), secgroup)
+    rules = []
+    for rule in sorted(secgroup_hash.keys()):
+        rules.append(generate_rule_string(rule, secgroup_hash[rule]))
+    sep = ",\n"
+    secgroup_str += sep.join(rules) + "\n"
+    secgroup_str += "%s}" % (" "*indent*spaces)
+    return secgroup_str
+
+def generate_rule_string(rule, rule_hash):
+    indent=2
+    spaces=4
+    rule_str = ""
+    rule_str += '%s"%s": {\n' % ((" "*indent*spaces), rule)
+    indent=3
+    rule_str += '%s"from_port": "%s", "to_port": "%s", "ip_protocol": "%s",\n' % (
+        (" "*indent*spaces),
+        rule_hash['from_port'],
+        rule_hash['to_port'],
+        rule_hash['ip_protocol'])
+    grants = rule_hash['grants']
+    if len(grants) == 1:
+        rule_str += '%s"grants": [ "%s" ]\n' % ((" "*indent*spaces), grants[0])
+    else:
+        rule_str += '%s"grants": [\n%s' % ((" "*indent*spaces), (" "*(indent+1)*spaces))
+        indent=4
+        sep=',\n%s' % (" "*indent*spaces)
+        rule_str += sep.join(sorted(map(lambda x: '"%s"'%x, grants))) + "\n"
+        rule_str += '%s]\n' % (" "*(indent-1)*spaces)
+    indent=2
+    rule_str += '%s}' % (" "*indent*spaces)
+    return rule_str
 
 
 def main():
@@ -192,8 +248,7 @@ def main():
     try:
         ec2set = get_ec2_rules(security_groups)
         if(args.dump_ec2):
-            ec2_dump = json.dumps(ec2set, sort_keys=True, indent=4, separators=(',', ': '))
-            print ec2_dump
+            print_ruleset(ec2set)
             exit(0)
     except BotoServerError, e:
         print "CRITICAL: %s" % e
@@ -201,8 +256,7 @@ def main():
     try:
         localset = get_local_rules(git_rules_file)
         if(args.dump_local):
-            local_dump = json.dumps(localset, sort_keys=True, indent=4, separators=(',', ': '))
-            print local_dump
+            print_ruleset(localset)
             exit(0)
     except IOError, e:
         print "CRITICAL: %s" % e
@@ -220,7 +274,7 @@ def main():
         print diffstring
         if(args.json_diff):
             print "This output is the union of all differences; missing and added rules from either location are all present here."
-            print json.dumps(diffhash, sort_keys=True, indent=4, separators=(',', ': '))
+            print_ruleset(diffhash)
         exit(2)
     else:
         print "OK - security groups match what's in git."
