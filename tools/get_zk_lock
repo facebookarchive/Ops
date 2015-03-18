@@ -62,6 +62,12 @@ def clean_stale_lockfiles(zk, config)
   end
 end
 
+# deletes a lock attempt
+def del_lock(zk, config, mylock)
+  puts "deleting self #{mylock[:path]}" if config[:verbose]
+  zk.delete(:path => "#{mylock[:path]}")
+end
+
 ## put up my own lockfile
 def create_lock_attempt(zk, config)
   new_lock = zk.create(:path => "#{config[:root]}/#{config[:lockname]}.", :sequence => true)
@@ -186,6 +192,8 @@ if got_lock?(mylock, zk, config)
   exit 0
 else
   puts "I failed to get the lock with #{mylock}" if config[:verbose]
+  # delete my failed lock to reduce the chance of collision next iteration
+  del_lock(zk, config, mylock)
   exit 1
 end
 
