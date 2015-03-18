@@ -50,7 +50,7 @@ def clean_stale_lockfiles(zk, config)
   children = zk.get_children(:path => config[:root])
   children[:children].each do |child|
     # skip all the children that aren't ours
-    next unless child.start_with?(config[:lockname])
+    next unless child.start_with?(config[:lockname] + ".")
     cstat = zk.stat(:path => "#{config[:root]}/#{child}")
     next unless cstat[:stat].exists #someone else may have deleted it already
     puts "testing child #{child} for deletion; it is #{Time.now() - Time.at(cstat[:stat].ctime / 1000)} seconds old" if config[:verbose]
@@ -79,7 +79,7 @@ end
 def got_lock?(lock_attempt, zk, config)
   children = zk.get_children(:path => config[:root])[:children].sort
   puts "children found are #{children}" if config[:verbose]
-  mylocks = children.select {|child| child.start_with?(config[:lockname]) }
+  mylocks = children.select {|child| child.start_with?(config[:lockname] + ".") }
   puts "Testing my lock (#{lock_attempt[:path]} against the first child (#{config[:root]}/#{mylocks.first})" if config[:verbose]
   return lock_attempt[:path] == "#{config[:root]}/#{mylocks.first}"
 end
